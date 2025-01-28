@@ -82,15 +82,12 @@ customer_file = st.file_uploader(
 if customer_file is not None:
     with st.spinner('Previewing file...'):
         try:
-            # Read the file as a pandas DataFrame with error handling
             df = pd.read_csv(
                 customer_file,
-                on_bad_lines='warn',  # Warn about bad lines instead of raising an error
-                engine='python',      # More flexible but slower engine
-                quoting=3            # QUOTE_NONE: Don't use quotes to enclose fields
+                on_bad_lines='warn',
+                engine='python',
+                quoting=3
             )
-            
-            # Reset the file pointer for later use
             customer_file.seek(0)
             
             st.write("### File Preview:")
@@ -100,15 +97,71 @@ if customer_file is not None:
             st.error(f"Error previewing file: {str(e)}")
             st.info("Note: Your file may contain inconsistent formatting. The validation process will still continue.")
 
+def display_status_box(status):
+    status = status.upper()
+    status_styles = {
+        "RED": {"color": "#842029", "bg": "#f8d7da", "border": "#f5c2c7", "emoji": "🔴"},
+        "YELLOW": {"color": "#664d03", "bg": "#fff3cd", "border": "#ffecb5", "emoji": "🟡"},
+        "GREEN": {"color": "#0f5132", "bg": "#d1e7dd", "border": "#badbcc", "emoji": "🟢"}
+    }
+    style = status_styles.get(status, status_styles["RED"])
+    
+    st.markdown(
+        f"""
+        <div style="
+            padding: 16px 20px;
+            border-radius: 8px;
+            margin: 25px 0;
+            background-color: {style['bg']};
+            border: 1px solid {style['border']};
+            color: {style['color']};
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        ">
+            <span style="font-size: 20px; margin-right: 10px;">{style['emoji']}</span>
+            <span>Validation Status: {status}</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def display_section(title, content, icon):
+    if not content:  # Skip empty sections
+        return
+        
+    st.markdown(
+        f"""
+        <div style="margin-top: 15px;">
+            <div style="
+                padding: 12px 16px;
+                background-color: #f8f9fa;
+                border-left: 4px solid #0d6efd;
+                font-weight: 500;
+                border-radius: 0 4px 4px 0;
+                display: flex;
+                align-items: center;
+            ">
+                <span style="margin-right: 8px;">{icon}</span>
+                {title}
+            </div>
+            <div style="
+                margin: 8px 0 0 20px;
+                line-height: 1.6;
+                padding: 8px 16px;
+            ">
+                {('<br>'.join([f"• {item}" for item in content]) if isinstance(content, list) else content)}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 if st.button("Run Validation"):
     if not customer_file:
         st.error("Please upload the customer data file before running the validation.")
     else:
         with st.spinner('Processing validation request...'):
-            st.write("### File Uploaded:")
-            st.write(f"- Customer File: {customer_file.name}")
-
-            # Send file to SnapLogic API using the new approach
             try:
                 response = requests.post(
                     url=URL,
@@ -123,98 +176,29 @@ if st.button("Run Validation"):
                 if response.status_code == 200:
                     try:
                         result = response.json()
-                        
-                        # Extract content from the nested structure
-                        if result and isinstance(result, list) and len(result) > 0:
-                            content = result[0].get('output', {}).get('message', {}).get('content', [{}])[0].get('text', '')
-                            
-                            if content:
-                                # Split content into sections
-                                sections = content.split('\n\n')
-                                
-                                # First, find and display the validation status
-                                status_line = next((s for s in sections if "Validation status:" in s), "")
-                                if status_line:
-                                    status = status_line.split("Validation status:")[1].strip()
-                                    status_color = {
-                                        "GREEN": "🟢 #0f5132",
-                                        "YELLOW": "🟡 #997404",
-                                        "RED": "🔴 #842029"
-                                    }.get(status.upper(), "#1e1e1e")
-                                    
-                                    st.markdown(
-                                        f"""
-                                        <div style="
-                                            padding: 20px;
-                                            border-radius: 10px;
-                                            margin: 25px 0;
-                                            background-color: {status_color.split()[1]};
-                                            color: white;
-                                            font-weight: bold;
-                                            display: flex;
-                                            align-items: center;
-                                        ">
-                                            <span style="font-size: 24px; margin-right: 10px;">{status_color.split()[0]}</span>
-                                            <span>Validation Status: {status}</span>
-                                        </div>
-                                        """,
-                                        unsafe_allow_html=True
-                                    )
 
-                                # Display the rest of the content in styled sections
-                                for section in sections:
-                                    if "Validation status:" not in section:
-                                        # Check if it's a section header
-                                        if any(header in section for header in [
-                                            "Errors and warnings:", 
-                                            "Recommendations:", 
-                                            "Conclusion:"
-                                        ]):
-                                            # Display section header
-                                            header = section.split(':')[0] + ':'
-                                            st.markdown(
-                                                f"""
-                                                <div style="
-                                                    margin-top: 30px;
-                                                    margin-bottom: 15px;
-                                                    padding: 12px 15px;
-                                                    background-color: #f8f9fa;
-                                                    border-left: 5px solid #0d6efd;
-                                                    font-weight: bold;
-                                                    border-radius: 0 4px 4px 0;
-                                                ">
-                                                    {header}
-                                                </div>
-                                                """, 
-                                                unsafe_allow_html=True
-                                            )
-                                            
-                                            # Display section content if any
-                                            if ':' in section:
-                                                content = section.split(':', 1)[1].strip()
-                                                if content:
-                                                    lines = content.split('\n')
-                                                    formatted_lines = []
-                                                    for line in lines:
-                                                        line = line.strip()
-                                                        if line:
-                                                            formatted_lines.append(f"&nbsp;&nbsp;&nbsp;&nbsp;{line}")
-                                                    
-                                                    formatted_content = "<br>".join(formatted_lines)
-                                                    st.markdown(
-                                                        f"""
-                                                        <div style="
-                                                            margin: 15px 0 20px 20px;
-                                                            line-height: 1.6;
-                                                        ">
-                                                            {formatted_content}
-                                                        </div>
-                                                        """,
-                                                        unsafe_allow_html=True
-                                                    )
-                                        else:
-                                            # Regular content
-                                            st.markdown(section)
+                        if result and isinstance(result, list) and len(result) > 0:
+                            # Extract the json_output from the response
+                            validation_data = result[0].get('json_output', {})
+                            
+                            if validation_data:
+                                # Display validation status
+                                display_status_box(validation_data.get('validation_status', 'RED'))
+                                
+                                # Display other sections with icons
+                                if validation_data.get('errors'):
+                                    display_section("Errors", validation_data['errors'], "⛔")
+                                    
+                                if validation_data.get('warnings'):
+                                    display_section("Warnings", validation_data['warnings'], "⚠️")
+                                    
+                                if validation_data.get('recommendations'):
+                                    display_section("Recommendations", validation_data['recommendations'], "💡")
+                                    
+                                if validation_data.get('conclusion'):
+                                    display_section("Conclusion", validation_data['conclusion'], "📝")
+                            else:
+                                st.error("No validation data found in the response")
                         else:
                             st.error("Invalid response format")
                             
